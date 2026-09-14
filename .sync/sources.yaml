@@ -9,19 +9,21 @@
 # so this change makes the pipeline configuration-driven without moving any
 # package between repositories.
 #
-# Determinism contract
-# --------------------
+# Determinism contract (force pushes are never used)
+# --------------------------------------------------
 # Per-source mirrors are pure functions of (upstream commit, this file):
 #
-#   1. git-filter-repo rewrites each upstream history. Same input plus same
-#      arguments always yields the same commit ids, so those branches publish
-#      as fast-forwards and do not need --force under a ruleset that forbids it.
+#   git-filter-repo rewrites each upstream history. Same input plus same
+#   arguments always yields the same commit ids, so those branches publish as
+#   fast-forwards. A failed push means reproducibility was lost.
 #
-# The combined branch is different. It is append-only onto the already published
-# tip: member commits not yet reflected there are replayed on top, and resume
-# position is recovered from the tip tree itself. Published combined commit ids
-# therefore never change. Rebuilding from scratch is not expected to reproduce
-# them; --verify checks the tip tree against the current member tips instead.
+# The combined branch is the pure function f(published tip, member tips):
+#
+#   Member commits not yet reflected in the published tip are replayed on top
+#   of it. Resume position is recovered from the tip tree (renamed subtree
+#   oids). Same tip plus same members always yield the same commit ids, so the
+#   push is a fast-forward (or a no-op). --verify checks both the tip tree
+#   against the member tips and that a second build reproduces the commit id.
 
 version: 1
 
@@ -30,9 +32,6 @@ sources:
     upstream: https://github.com/autowarefoundation/autoware_universe.git
     ref: main
     mirror_branch: awf-latest
-    # Kept non-forced on purpose: a failed push is the alarm that tells us the
-    # filtered history stopped being reproducible.
-    force: false
     paths:
       - path: localization/
       - path: map/
@@ -47,7 +46,6 @@ sources:
     upstream: https://github.com/autowarefoundation/autoware_core.git
     ref: main
     mirror_branch: awf-core-latest
-    force: true
     paths:
       - path: localization/
       - path: map/
@@ -59,7 +57,6 @@ sources:
     upstream: https://github.com/autowarefoundation/autoware_launch.git
     ref: main
     mirror_branch: awf-launch-latest
-    force: true
     # Configured ahead of the upstream restructure that creates these paths:
     # autowarefoundation/autoware_launch#1971 migrates tier4_localization_launch
     # to autoware_localization_launch plus a separate config package, and map is
@@ -78,7 +75,6 @@ sources:
     upstream: https://github.com/tier4/autoware_universe.git
     ref: feat/v0.64/e2e
     mirror_branch: feat/v0.64/e2e
-    force: true
     paths:
       - path: localization/
       - path: map/
@@ -97,12 +93,11 @@ sources:
 
 combined:
   awf-combined-latest:
-    # Members are replayed into one linear history ordered by committer date.
-    # Ties break on member order then original commit id, so the ordering is
-    # total and stable. New member commits are appended onto the published tip;
-    # force stays off so a ruleset that blocks non-fast-forward updates is fine.
+    # Pending member commits are appended onto the published tip, ordered by
+    # committer date among themselves. Ties break on member order then original
+    # commit id. The result is a deterministic function of (published tip,
+    # member tips) and always fast-forwards.
     order_by: committer_date
-    force: false
     # Each member is filed under the name of its upstream, which keeps the two
     # histories from sharing a directory and makes provenance visible in the
     # path. Everything else at the root comes from autoware_universe.

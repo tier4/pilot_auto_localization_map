@@ -10,11 +10,12 @@
 from the configuration. `combine` reads the already published mirror branches,
 so it never needs an upstream clone and cannot disagree with what was pushed.
 
-Per-source mirrors are deterministic: the same upstream tip and configuration
-always yield the same commit ids. The combined branch is append-only onto the
-already published tip, so published commit ids never change. `--verify` checks
-that the tip tree matches what the current member tips compose to, which keeps
-content auditable without requiring rebuild identity.
+Publishing never uses --force. Per-source mirrors are pure functions of
+(upstream tip, configuration), so updates are fast-forwards when reproducible.
+The combined branch is the pure function f(published tip, member tips): only
+not-yet-reflected member commits are appended, with resume recovered from the
+tip tree, so the same inputs always yield the same commit ids and the push is
+always a fast-forward (or a no-op).
 """
 
 from __future__ import annotations
@@ -75,7 +76,8 @@ _PUSH_HINTS = (
     ),
     (
         "non-fast-forward",
-        "the published history diverged from this build, so publishing it needs " "a force update",
+        "the published history diverged from this build; force pushes are not "
+        "used, so the local build must fast-forward the published tip",
     ),
 )
 
@@ -83,9 +85,8 @@ _PUSH_HINTS = (
 def _published_state(repo: str, downstream: str, branch: str, built: str) -> str:
     """Classify what publishing `built` to `branch` would do, and say so.
 
-    A fast-forward means every previously published commit id came out the same,
-    which is the determinism contract holding in production. A diverged branch
-    is a rewrite, and worth shouting about even when force is allowed.
+    A fast-forward means the new tip descends from the published tip. Divergence
+    is a hard error: this repository never force-pushes.
     """
     ref = f"refs/mirror-published/{branch}"
     probe = subprocess.run(
@@ -118,34 +119,30 @@ def _published_state(repo: str, downstream: str, branch: str, built: str) -> str
         print(f"  {branch}: fast-forward from {published[:12]} to {built[:12]}")
         return "fast-forward"
     print(
-        f"  {branch}: WARNING history rewritten, {published[:12]} is not an "
-        f"ancestor of {built[:12]}; previously published commit ids changed"
+        f"  {branch}: ERROR history would diverge, {published[:12]} is not an "
+        f"ancestor of {built[:12]}"
     )
     return "diverged"
 
 
-def _publish(
-    repo: str, downstream: str, local_ref: str, branch: str, built: str, allow_force: bool
-) -> None:
-    """Push `built`, forcing only when the update genuinely needs it."""
+def _publish(repo: str, downstream: str, local_ref: str, branch: str, built: str) -> None:
+    """Push `built` without --force. Divergence fails instead of rewriting."""
     state = _published_state(repo, downstream, branch, built)
     if state == "unchanged":
         print(f"  {branch}: already published, nothing to push")
         return
-    if state == "diverged" and not allow_force:
+    if state == "diverged":
         raise RuntimeError(
-            f"{branch}: publishing would rewrite published history, and the "
-            "configuration does not allow forcing this branch"
+            f"{branch}: publishing would rewrite published history; "
+            "force pushes are not used in this repository"
         )
 
-    args = ["git", "-C", repo, "push"]
-    if state == "diverged":
-        # Only here. Forcing a fast-forward is pointless and trips rulesets that
-        # would have allowed the same update without the flag.
-        args.append("--force")
-    args += [downstream, f"{local_ref}:refs/heads/{branch}"]
-
-    result = subprocess.run(args, check=False, capture_output=True, text=True)
+    result = subprocess.run(
+        ["git", "-C", repo, "push", downstream, f"{local_ref}:refs/heads/{branch}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     if result.stderr:
         print(result.stderr.rstrip())
     if result.returncode == 0:
@@ -203,7 +200,7 @@ def do_mirror(config: sync_config.Config, args: argparse.Namespace) -> int:
     if args.push:
         if not args.downstream:
             raise RuntimeError("--push needs --downstream")
-        _publish(clone, args.downstream, "HEAD", source.mirror_branch, tip, source.force)
+        _publish(clone, args.downstream, "HEAD", source.mirror_branch, tip)
     else:
         if args.downstream:
             _published_state(clone, args.downstream, source.mirror_branch, tip)
@@ -342,22 +339,19 @@ def do_combine(config: sync_config.Config, args: argparse.Namespace) -> int:
     if args.verify:
         print(f"verifying {args.target} against current member tips")
         _verify_combined_content(config, args.target, repo, args.downstream, built)
-        if base is not None:
-            # Same published tip plus same members must append the same commits.
-            second = os.path.join(work, "verify")
-            print(f"verifying {args.target} append is reproducible from {base[:12]}")
-            again = _build_combined(config, args.target, second, args.downstream, base)
-            if again != built:
-                raise RuntimeError(
-                    f"append determinism check failed: {built} on the first build, "
-                    f"{again} on the second"
-                )
-            print(f"  {args.target}: reproducible append, both builds are {built[:12]}")
+        # Same inputs must yield the same commit ids: (published tip or empty, members).
+        second = os.path.join(work, "verify")
+        label = f"from {base[:12]}" if base is not None else "from scratch"
+        print(f"verifying {args.target} is reproducible {label}")
+        again = _build_combined(config, args.target, second, args.downstream, base)
+        if again != built:
+            raise RuntimeError(
+                f"determinism check failed: {built} on the first build, {again} on the second"
+            )
+        print(f"  {args.target}: reproducible, both builds are {built[:12]}")
 
     if args.push:
-        _publish(
-            repo, args.downstream, f"refs/heads/{args.target}", args.target, built, target.force
-        )
+        _publish(repo, args.downstream, f"refs/heads/{args.target}", args.target, built)
     else:
         _published_state(repo, args.downstream, args.target, built)
         print("  dry run, nothing pushed")

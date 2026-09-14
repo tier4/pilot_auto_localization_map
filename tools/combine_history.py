@@ -9,11 +9,12 @@ commit, and its tree is recomposed from the latest state of every member.
 Nothing is synthesised. No merge commit is created and no wall-clock value ever
 reaches an object.
 
-When a published tip is supplied, only the member commits not yet reflected in
-that tip are appended. Resume position is recovered from the tip itself: after
-each planned replay step the composed tree is compared to the tip's tree, so no
-sidecar ref is required. Published commit ids therefore never change; rebuilding
-from scratch is no longer expected to reproduce them.
+The result is the pure function f(published tip, member tips). When a published
+tip is supplied, only member commits not yet reflected in that tip are appended;
+resume position is recovered from the tip tree itself. The same tip plus the
+same members therefore always yield the same commit ids, and publishing is a
+fast-forward without --force. With no published tip, the full member histories
+are replayed from scratch (first publish).
 """
 
 from __future__ import annotations

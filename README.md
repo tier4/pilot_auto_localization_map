@@ -64,31 +64,28 @@ The pipeline has two stages:
 
 ### Determinism and publishing
 
+Force pushes are never used. Every publish is absent → create, unchanged, or
+fast-forward; anything else fails the job.
+
 Per-source mirrors are pure functions of `(upstream commit, .sync/sources.yaml)`:
 
 - `git-filter-repo` rewrites a given history the same way every time. The
   version is pinned in the workflow, because a different version may rewrite
   differently.
-- The same upstream tip therefore republishes as a fast-forward. `awf-latest`
-  is configured with `force: false` on purpose, so losing reproducibility fails
-  the job instead of silently rewriting.
+- The same upstream tip therefore republishes as a fast-forward. A failed push
+  means reproducibility was lost.
 
-The combined branch trades a different guarantee. It appends onto the already
-published tip: only member commits not yet reflected there are replayed, and
-the resume point is recovered from the tip tree (each member's renamed subtree
-oids). Published combined commit ids never change, so a ruleset that forbids
-force pushes does not block normal updates. What is given up is rebuild
-identity — recreating the branch from scratch is not expected to reproduce
-those ids.
+The combined branch is the pure function
+`f(published tip, member tips)`:
 
-Content stays auditable:
-
+- Member commits not yet reflected in the published tip are appended onto it.
+  The resume point is recovered from the tip tree (each member's renamed
+  subtree oids). No sidecar ref is required.
+- Same published tip plus same member tips always yield the same commit ids, so
+  the push is a fast-forward (or unchanged).
 - `tools/mirror.py combine --verify` checks that the tip tree matches what the
-  current member tips compose to, and that appending from the same published
-  tip is reproducible. The scheduled workflow always passes `--verify`.
-- Every push reports whether the previously published tip is still an ancestor
-  of the new one. Under append-only operation that update is always a
-  fast-forward (or unchanged).
+  current member tips compose to, and that a second build from the same inputs
+  reproduces the commit id. The scheduled workflow always passes `--verify`.
 
 ### Working on the configuration
 

@@ -126,7 +126,7 @@ def _parse_source(name: str, raw: dict[str, Any]) -> Source:
         _parse_message_rule(entry, f"{where}.message_rules[{index}]")
         for index, entry in enumerate(raw.get("message_rules", []))
     ]
-    return Source(
+    source = Source(
         name=name,
         upstream=str(raw["upstream"]),
         ref=str(raw["ref"]),
@@ -136,6 +136,11 @@ def _parse_source(name: str, raw: dict[str, Any]) -> Source:
         force=bool(raw.get("force", False)),
         optional=bool(raw.get("optional", False)),
     )
+    if source.force:
+        raise ConfigError(
+            f"{where}: force pushes are not supported; omit 'force' or set it to false"
+        )
+    return source
 
 
 def _parse_combined(name: str, raw: dict[str, Any], sources: dict[str, Source]) -> Combined:
@@ -171,12 +176,17 @@ def _parse_combined(name: str, raw: dict[str, Any], sources: dict[str, Source]) 
     order_by = str(raw.get("order_by", "committer_date"))
     if order_by not in ("committer_date", "author_date"):
         raise ConfigError(f"{where}.order_by: must be committer_date or author_date")
-    return Combined(
+    combined = Combined(
         name=name,
         members=members,
         order_by=order_by,
         force=bool(raw.get("force", False)),
     )
+    if combined.force:
+        raise ConfigError(
+            f"{where}: force pushes are not supported; omit 'force' or set it to false"
+        )
+    return combined
 
 
 def _check_ref_hierarchy(branches: dict[str, str]) -> None:
