@@ -65,7 +65,7 @@ class Combined:
     name: str
     members: list[Member]
     order_by: str = "committer_date"
-    force: bool = True
+    force: bool = False
 
 
 @dataclass
@@ -175,7 +175,7 @@ def _parse_combined(name: str, raw: dict[str, Any], sources: dict[str, Source]) 
         name=name,
         members=members,
         order_by=order_by,
-        force=bool(raw.get("force", True)),
+        force=bool(raw.get("force", False)),
     )
 
 

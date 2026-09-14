@@ -57,32 +57,38 @@ The pipeline has two stages:
    `git-filter-repo` with arguments generated from the configuration, then
    pushes the result to that source's `mirror_branch`.
 2. **Combine.** `tools/mirror.py combine TARGET` reads the mirror branches that
-   stage 1 published and replays them into a single linear history ordered by
-   committer date. It never clones an upstream, so the combined branch cannot
-   disagree with the per-source mirrors.
+   stage 1 published and appends any not-yet-reflected member commits onto the
+   already published combined tip (or builds from scratch on first publish).
+   It never clones an upstream, so the combined branch cannot disagree with the
+   per-source mirrors.
 
-### Determinism
+### Determinism and publishing
 
-Both stages are pure functions of `(upstream commit, .sync/sources.yaml)`:
+Per-source mirrors are pure functions of `(upstream commit, .sync/sources.yaml)`:
 
 - `git-filter-repo` rewrites a given history the same way every time. The
   version is pinned in the workflow, because a different version may rewrite
   differently.
-- The combiner synthesises nothing. Every replayed commit keeps its original
-  author, committer, timestamps and message; only its parent is rewritten, and
-  its tree is recomposed from the current state of each member. No wall-clock
-  value ever reaches an object.
+- The same upstream tip therefore republishes as a fast-forward. `awf-latest`
+  is configured with `force: false` on purpose, so losing reproducibility fails
+  the job instead of silently rewriting.
 
-This is checked rather than assumed:
+The combined branch trades a different guarantee. It appends onto the already
+published tip: only member commits not yet reflected there are replayed, and
+the resume point is recovered from the tip tree (each member's renamed subtree
+oids). Published combined commit ids never change, so a ruleset that forbids
+force pushes does not block normal updates. What is given up is rebuild
+identity — recreating the branch from scratch is not expected to reproduce
+those ids.
 
-- `tools/mirror.py combine --verify` rebuilds the branch from scratch a second
-  time and fails unless both builds produce the same commit id. The scheduled
-  workflow always passes `--verify`.
+Content stays auditable:
+
+- `tools/mirror.py combine --verify` checks that the tip tree matches what the
+  current member tips compose to, and that appending from the same published
+  tip is reproducible. The scheduled workflow always passes `--verify`.
 - Every push reports whether the previously published tip is still an ancestor
-  of the new one. A fast-forward means the contract held; anything else is
-  reported as a rewrite.
-- `awf-latest` is pushed without `--force` on purpose, so losing
-  reproducibility there fails the job instead of silently republishing.
+  of the new one. Under append-only operation that update is always a
+  fast-forward (or unchanged).
 
 ### Working on the configuration
 

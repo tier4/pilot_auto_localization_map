@@ -11,17 +11,17 @@
 #
 # Determinism contract
 # --------------------
-# Both stages below are pure functions of (upstream commit, this file):
+# Per-source mirrors are pure functions of (upstream commit, this file):
 #
 #   1. git-filter-repo rewrites each upstream history. Same input plus same
-#      arguments always yields the same commit ids.
-#   2. tools/combine_history.py replays the filtered histories into one linear
-#      branch. Every replayed commit keeps its original author, committer,
-#      timestamps and message; only its parent is rewritten and its tree is
-#      recomposed. No commit is synthesised, so no wall-clock value ever enters
-#      an object.
+#      arguments always yields the same commit ids, so those branches publish
+#      as fast-forwards and do not need --force under a ruleset that forbids it.
 #
-# Rebuilding from scratch therefore reproduces the published branches exactly.
+# The combined branch is different. It is append-only onto the already published
+# tip: member commits not yet reflected there are replayed on top, and resume
+# position is recovered from the tip tree itself. Published combined commit ids
+# therefore never change. Rebuilding from scratch is not expected to reproduce
+# them; --verify checks the tip tree against the current member tips instead.
 
 version: 1
 
@@ -99,9 +99,10 @@ combined:
   awf-combined-latest:
     # Members are replayed into one linear history ordered by committer date.
     # Ties break on member order then original commit id, so the ordering is
-    # total and stable.
+    # total and stable. New member commits are appended onto the published tip;
+    # force stays off so a ruleset that blocks non-fast-forward updates is fine.
     order_by: committer_date
-    force: true
+    force: false
     # Each member is filed under the name of its upstream, which keeps the two
     # histories from sharing a directory and makes provenance visible in the
     # path. Everything else at the root comes from autoware_universe.

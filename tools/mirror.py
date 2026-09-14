@@ -10,9 +10,11 @@
 from the configuration. `combine` reads the already published mirror branches,
 so it never needs an upstream clone and cannot disagree with what was pushed.
 
-Both stages are deterministic. `--verify` re-runs a combine from scratch into a
-second repository and fails unless the two builds agree, which turns the
-determinism contract in sources.yaml into something CI actually checks.
+Per-source mirrors are deterministic: the same upstream tip and configuration
+always yield the same commit ids. The combined branch is append-only onto the
+already published tip, so published commit ids never change. `--verify` checks
+that the tip tree matches what the current member tips compose to, which keeps
+content auditable without requiring rebuild identity.
 """
 
 from __future__ import annotations
@@ -218,9 +220,10 @@ def _remote_has_branch(downstream: str, branch: str) -> bool:
     return result.returncode == 0
 
 
-def _build_combined(config: sync_config.Config, name: str, repo: str, downstream: str) -> str:
-    target = config.combined[name]
-    members = [
+def _member_specs(
+    config: sync_config.Config, target: sync_config.Combined, downstream: str
+) -> list[MemberSpec]:
+    return [
         MemberSpec(
             name=member.source,
             url=downstream,
@@ -229,8 +232,65 @@ def _build_combined(config: sync_config.Config, name: str, repo: str, downstream
         )
         for member in target.members
     ]
+
+
+def _fetch_published_tip(repo: str, downstream: str, branch: str) -> str | None:
+    """Return the published tip oid, or None when the branch does not exist yet."""
+    ref = f"refs/mirror-published/{branch}"
+    probe = subprocess.run(
+        [
+            "git",
+            "-C",
+            repo,
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--force",
+            downstream,
+            f"refs/heads/{branch}:{ref}",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        return None
+    return _capture(["git", "-C", repo, "rev-parse", ref])
+
+
+def _build_combined(
+    config: sync_config.Config,
+    name: str,
+    repo: str,
+    downstream: str,
+    base: str | None,
+) -> str:
+    target = config.combined[name]
+    members = _member_specs(config, target, downstream)
     _run(["git", "init", "--quiet", repo])
-    return combine_history.combine(repo, name, members, target.order_by)
+    if base is not None:
+        fetched = _fetch_published_tip(repo, downstream, name)
+        if fetched != base:
+            raise RuntimeError(
+                f"{name}: published tip changed during verify "
+                f"({base[:12]} -> {fetched[:12] if fetched else 'absent'})"
+            )
+    return combine_history.combine(repo, name, members, target.order_by, base=base)
+
+
+def _verify_combined_content(
+    config: sync_config.Config, name: str, repo: str, downstream: str, built: str
+) -> None:
+    """Fail unless the tip tree matches what the current member tips compose to."""
+    target = config.combined[name]
+    members = _member_specs(config, target, downstream)
+    expected = combine_history.expected_tip_tree(repo, members, target.order_by)
+    actual = _capture(["git", "-C", repo, "rev-parse", f"{built}^{{tree}}"])
+    if actual != expected:
+        raise RuntimeError(
+            f"content check failed: tip tree is {actual[:12]}, "
+            f"member tips compose to {expected[:12]}"
+        )
+    print(f"  {name}: tip tree {actual[:12]} matches the current member tips")
 
 
 def do_combine(config: sync_config.Config, args: argparse.Namespace) -> int:
@@ -263,19 +323,36 @@ def do_combine(config: sync_config.Config, args: argparse.Namespace) -> int:
 
     work = _fresh_dir(os.path.join(args.work, args.target))
     repo = os.path.join(work, "combined")
-    print(f"building {args.target}")
-    built = _build_combined(config, args.target, repo, args.downstream)
+    _run(["git", "init", "--quiet", repo])
+    base = _fetch_published_tip(repo, args.downstream, args.target)
+    if base is None:
+        print(f"building {args.target} from scratch (not published yet)")
+    else:
+        print(f"building {args.target} by appending onto {base[:12]}")
+
+    built = combine_history.combine(
+        repo,
+        args.target,
+        _member_specs(config, target, args.downstream),
+        target.order_by,
+        base=base,
+    )
     print(f"  {args.target}: tip {built[:12]}")
 
     if args.verify:
-        second = os.path.join(work, "verify")
-        print(f"verifying {args.target} by rebuilding from scratch")
-        again = _build_combined(config, args.target, second, args.downstream)
-        if again != built:
-            raise RuntimeError(
-                f"determinism check failed: {built} on the first build, {again} on the second"
-            )
-        print(f"  {args.target}: reproducible, both builds are {built[:12]}")
+        print(f"verifying {args.target} against current member tips")
+        _verify_combined_content(config, args.target, repo, args.downstream, built)
+        if base is not None:
+            # Same published tip plus same members must append the same commits.
+            second = os.path.join(work, "verify")
+            print(f"verifying {args.target} append is reproducible from {base[:12]}")
+            again = _build_combined(config, args.target, second, args.downstream, base)
+            if again != built:
+                raise RuntimeError(
+                    f"append determinism check failed: {built} on the first build, "
+                    f"{again} on the second"
+                )
+            print(f"  {args.target}: reproducible append, both builds are {built[:12]}")
 
     if args.push:
         _publish(
