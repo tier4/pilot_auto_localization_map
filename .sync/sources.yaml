@@ -29,7 +29,9 @@ sources:
   autoware_universe:
     upstream: https://github.com/autowarefoundation/autoware_universe.git
     ref: main
-    mirror_branch: awf-latest/universe
+    # Flat name: awf-latest/universe cannot coexist with the existing awf-latest
+    # branch, and creating nested refs is refused by the organisation rulesets.
+    mirror_branch: awf-latest
     # Kept non-forced on purpose: a failed push is the alarm that tells us the
     # filtered history stopped being reproducible.
     force: false
@@ -46,7 +48,7 @@ sources:
   autoware_core:
     upstream: https://github.com/autowarefoundation/autoware_core.git
     ref: main
-    mirror_branch: awf-latest/core
+    mirror_branch: awf-core-latest
     force: true
     paths:
       - path: localization/
@@ -58,14 +60,12 @@ sources:
   autoware_launch:
     upstream: https://github.com/autowarefoundation/autoware_launch.git
     ref: main
-    mirror_branch: awf-latest/launch
+    # Flat sibling of awf-latest / awf-core-latest (nested awf-latest/launch is
+    # blocked while awf-latest exists).
+    mirror_branch: awf-launch-latest
     force: true
-    # Configured ahead of the upstream restructure that creates these paths:
-    # autowarefoundation/autoware_launch#1971 migrates tier4_localization_launch
-    # to autoware_localization_launch plus a separate config package, and map is
-    # to follow. Until they exist the filter matches nothing, which 'optional'
-    # turns into a skip rather than a failure, so the mirror starts on its own
-    # once the upstream change lands.
+    # Paths come from autowarefoundation/autoware_launch#1971 (and map follow-ups).
+    # Marked optional so a temporary empty filter is a skip rather than a failure.
     optional: true
     paths:
       - regex: ^autoware_universe_launch/autoware_localization_[^/]+(/.*)?$
