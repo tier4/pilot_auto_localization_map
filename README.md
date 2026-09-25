@@ -12,7 +12,8 @@ This branch only holds the mirror configuration and its tooling. See the mirror 
 | `awf-latest/core` | `autowarefoundation/autoware_core:main`, `localization/`, `map/` |
 | `awf-latest/launch` | `autowarefoundation/autoware_launch:main`, `autoware_localization_*` and `autoware_map_*` |
 | `feat/v0.64/e2e` | `tier4/autoware_universe:feat/v0.64/e2e`, the same paths as the universe mirror |
-| `awf-combined-latest` | the `awf-latest/*` mirrors replayed into one linear history |
+| `awf-combined-latest` | the `awf-latest/*` mirrors (universe, core, and launch when present) replayed into one linear history |
+| `awf-universe-core-combined-latest` | `awf-latest/universe` and `awf-latest/core` only (no launch) |
 
 In the combined branch each member is filed under the name of its upstream,
 which keeps the histories out of one another's directories and makes provenance
@@ -32,7 +33,14 @@ awf-combined-latest/
 ├── universe/map/
 ├── core/localization/
 ├── core/map/
-├── launch/
+├── launch/                     # when the optional launch mirror is published
+└── .github/  docs/  LICENSE  NOTICE  README.md  ...
+
+awf-universe-core-combined-latest/
+├── universe/localization/
+├── universe/map/
+├── core/localization/
+├── core/map/
 └── .github/  docs/  LICENSE  NOTICE  README.md  ...
 ```
 

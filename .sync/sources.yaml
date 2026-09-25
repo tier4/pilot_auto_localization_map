@@ -117,3 +117,18 @@ combined:
       - source: autoware_launch
         rename:
           autoware_universe_launch: launch
+
+  awf-universe-core-combined-latest:
+    # universe + core only (no launch). Separate from awf-combined-latest so the
+    # existing tip (which may include launch) does not need rewriting.
+    order_by: committer_date
+    force: true
+    members:
+      - source: autoware_universe
+        rename:
+          localization: universe/localization
+          map: universe/map
+      - source: autoware_core
+        rename:
+          localization: core/localization
+          map: core/map
