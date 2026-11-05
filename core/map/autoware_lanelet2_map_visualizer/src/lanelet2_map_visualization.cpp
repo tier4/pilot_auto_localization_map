@@ -115,7 +115,7 @@ visualization_msgs::msg::MarkerArray create_lanelet_map_marker_array(
   const std_msgs::msg::ColorRGBA cl_partitions =
     autoware_utils_visualization::create_marker_color(0.25, 0.25, 0.25, 0.999);
   const std_msgs::msg::ColorRGBA cl_road_borders =
-    autoware_utils_visualization::create_marker_color(0.3, 0.25, 0.3, 0.999);
+    autoware_utils_visualization::create_marker_color(0.8, 0.0, 0.2, 0.8);
   const std_msgs::msg::ColorRGBA cl_pedestrian_markings =
     autoware_utils_visualization::create_marker_color(0.5, 0.5, 0.5, 0.999);
   const std_msgs::msg::ColorRGBA cl_ll_borders =
