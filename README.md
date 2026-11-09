@@ -82,8 +82,8 @@ This is checked rather than assumed:
 - Every push reports whether the previously published tip is still an ancestor
   of the new one. A fast-forward means the contract held; anything else is
   reported as a rewrite.
-- `awf-latest` is pushed without `--force` on purpose, so losing
-  reproducibility there fails the job instead of silently republishing.
+- Published branches are pushed without `--force` on purpose, so losing
+  reproducibility fails the job instead of silently republishing.
 
 ### Working on the configuration
 
@@ -95,3 +95,42 @@ tools/sync_config.py show autoware_universe  # the git-filter-repo call it impli
 ```
 
 Without `--push`, `tools/mirror.py mirror` and `tools/mirror.py combine` are dry runs.
+
+### Manual sync
+
+Local equivalent of `.github/workflows/mirror.yaml`. Publishing is
+**fast-forward only** (every `force:` in `.sync/sources.yaml` is `false`).
+Do not confuse that with `git filter-repo --force`, which only rewrites the
+scratch clone under `WORK`.
+
+Run this from a separate clone or worktree so your working branch stays
+clean, and install dependencies in a venv.
+
+```bash
+git checkout ci && git pull origin ci
+python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install pyyaml 'git-filter-repo==2.47.0'
+
+./tools/manual_sync.sh         # dry run (default; build only)
+PUSH=1 ./tools/manual_sync.sh  # push to origin
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PUSH` | `0` | Set `1` to push; omit or `0` for a dry run |
+| `DOWNSTREAM` | `git@github.com:tier4/pilot_auto_localization_map.git` | Git remote to push |
+| `WORK` | `/tmp/pilot_auto_localization_map-sync` | Scratch directory for clones |
+
+To refresh one source only:
+
+```bash
+export PYTHONPATH="$PWD/tools${PYTHONPATH:+:$PYTHONPATH}"
+tools/mirror.py mirror SOURCE \
+  --work "/tmp/pilot_auto_localization_map-sync/mirror" \
+  --downstream "git@github.com:tier4/pilot_auto_localization_map.git" \
+  --push
+```
+
+Replace `SOURCE` with a name from `tools/mirror.py list-sources`.
+For a combined target, use `tools/mirror.py combine TARGET ... --verify --push`
+after its member mirrors are published.

@@ -49,7 +49,8 @@ sources:
     upstream: https://github.com/autowarefoundation/autoware_core.git
     ref: main
     mirror_branch: awf-core-latest
-    force: true
+    # Fast-forward only: a failed push means reproducibility broke.
+    force: false
     paths:
       - path: localization/
       - path: map/
@@ -63,7 +64,8 @@ sources:
     # Flat sibling of awf-latest / awf-core-latest (nested awf-latest/launch is
     # blocked while awf-latest exists).
     mirror_branch: awf-launch-latest
-    force: true
+    # Fast-forward only: a failed push means reproducibility broke.
+    force: false
     # Paths come from autowarefoundation/autoware_launch#1971 (and map follow-ups).
     # Marked optional so a temporary empty filter is a skip rather than a failure.
     optional: true
@@ -78,7 +80,8 @@ sources:
     upstream: https://github.com/tier4/autoware_universe.git
     ref: feat/v0.64/e2e
     mirror_branch: feat/v0.64/e2e
-    force: true
+    # Fast-forward only: a failed push means reproducibility broke.
+    force: false
     paths:
       - path: localization/
       - path: map/
@@ -101,7 +104,8 @@ combined:
     # Ties break on member order then original commit id, so the ordering is
     # total and stable.
     order_by: committer_date
-    force: true
+    # Fast-forward only: a failed push means reproducibility broke.
+    force: false
     # Each member is filed under the name of its upstream, which keeps the two
     # histories from sharing a directory and makes provenance visible in the
     # path. Everything else at the root comes from autoware_universe.
@@ -122,7 +126,8 @@ combined:
     # universe + core only (no launch). Separate from awf-combined-latest so the
     # existing tip (which may include launch) does not need rewriting.
     order_by: committer_date
-    force: true
+    # Fast-forward only: a failed push means reproducibility broke.
+    force: false
     members:
       - source: autoware_universe
         rename:
