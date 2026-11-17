@@ -1155,16 +1155,22 @@ std::tuple<geometry_msgs::msg::PoseWithCovarianceStamped, double> NDTScanMatcher
   const double stddev_z = std::sqrt(covariance(2, 2));
   const double stddev_roll = std::sqrt(covariance(3, 3));
   const double stddev_pitch = std::sqrt(covariance(4, 4));
+  const double stddev_yaw = std::sqrt(covariance(5, 5));
 
-  // Since only yaw is uniformly sampled, we define the mean and standard deviation for the others.
-  const std::vector<double> sample_mean{
+  std::vector<double> sample_mean{
     initial_pose_with_cov.pose.pose.position.x,  // trans_x
     initial_pose_with_cov.pose.pose.position.y,  // trans_y
     initial_pose_with_cov.pose.pose.position.z,  // trans_z
     base_rpy.x,                                  // angle_x
     base_rpy.y                                   // angle_y
   };
-  const std::vector<double> sample_stddev{stddev_x, stddev_y, stddev_z, stddev_roll, stddev_pitch};
+  std::vector<double> sample_stddev{stddev_x, stddev_y, stddev_z, stddev_roll, stddev_pitch};
+
+  // Yaw is sampled around the initial yaw if its stddev is given, otherwise uniformly sampled.
+  if (stddev_yaw > 0.0) {
+    sample_mean.push_back(base_rpy.z);
+    sample_stddev.push_back(stddev_yaw);
+  }
 
   // Optimizing (x, y, z, roll, pitch, yaw) 6 dimensions.
   TreeStructuredParzenEstimator tpe(

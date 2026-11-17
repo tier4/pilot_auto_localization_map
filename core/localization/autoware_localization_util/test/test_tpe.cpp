@@ -103,6 +103,46 @@ TEST(TreeStructuredParzenEstimatorTest, Constructor)
         TreeStructuredParzenEstimator::Direction::MAXIMIZE, 10, sample_mean, invalid_stddev);
     },
     std::runtime_error);
+
+  // Parameters including yaw should construct successfully
+  std::vector<double> sample_mean_with_yaw(6, 0.0);
+  std::vector<double> sample_stddev_with_yaw(6, 1.0);
+  EXPECT_NO_THROW({
+    TreeStructuredParzenEstimator estimator(
+      TreeStructuredParzenEstimator::Direction::MAXIMIZE, 10, sample_mean_with_yaw,
+      sample_stddev_with_yaw);
+  });
+
+  // Mean and stddev of different sizes should throw an exception
+  EXPECT_THROW(
+    {
+      TreeStructuredParzenEstimator estimator(
+        TreeStructuredParzenEstimator::Direction::MAXIMIZE, 10, sample_mean_with_yaw,
+        sample_stddev);
+    },
+    std::runtime_error);
+}
+
+// Test that yaw is sampled around the given mean when yaw is included in the parameters
+TEST(TreeStructuredParzenEstimatorTest, YawIsSampledAroundGivenMean)
+{
+  const double yaw_mean = 1.0;
+  const double yaw_stddev = 10.0 / 180.0 * M_PI;
+  std::vector<double> sample_mean{0.0, 0.0, 0.0, 0.0, 0.0, yaw_mean};
+  std::vector<double> sample_stddev{1.0, 1.0, 0.1, 0.1, 0.1, yaw_stddev};
+
+  const int64_t n_startup_trials = 50;
+  const int64_t n_trials = 100;
+  TreeStructuredParzenEstimator estimator(
+    TreeStructuredParzenEstimator::Direction::MAXIMIZE, n_startup_trials, sample_mean,
+    sample_stddev);
+
+  for (int64_t i = 0; i < n_trials; i++) {
+    const TreeStructuredParzenEstimator::Input input = estimator.get_next_input();
+    // Both the startup phase and the TPE phase should stay within 5 sigma of the mean
+    EXPECT_NEAR(input[TreeStructuredParzenEstimator::ANGLE_Z], yaw_mean, 5.0 * yaw_stddev);
+    estimator.add_trial({input, -std::pow(input[0], 2) - std::pow(input[1], 2)});
+  }
 }
 
 // Test the add_trial method and sorting functionality

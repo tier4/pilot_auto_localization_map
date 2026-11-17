@@ -37,11 +37,12 @@ TreeStructuredParzenEstimator::TreeStructuredParzenEstimator(
   sample_mean_(std::move(sample_mean)),
   sample_stddev_(std::move(sample_stddev))
 {
-  if (sample_mean_.size() != ANGLE_Z) {
+  // The yaw element is optional. If it is omitted, yaw is sampled uniformly from [-pi, pi).
+  if (sample_mean_.size() != ANGLE_Z && sample_mean_.size() != INDEX_NUM) {
     std::cerr << "sample_mean size is invalid" << std::endl;
     throw std::runtime_error("sample_mean size is invalid");
   }
-  if (sample_stddev_.size() != ANGLE_Z) {
+  if (sample_stddev_.size() != sample_mean_.size()) {
     std::cerr << "sample_stddev size is invalid" << std::endl;
     throw std::runtime_error("sample_stddev size is invalid");
   }
@@ -79,6 +80,12 @@ TreeStructuredParzenEstimator::Input TreeStructuredParzenEstimator::get_next_inp
   std::normal_distribution<double> dist_normal_angle_y(
     sample_mean_[ANGLE_Y], sample_stddev_[ANGLE_Y]);
   std::uniform_real_distribution<double> dist_uniform_angle_z(-M_PI, M_PI);
+  const bool is_yaw_given = (sample_mean_.size() == INDEX_NUM);
+  std::normal_distribution<double> dist_normal_angle_z(
+    is_yaw_given ? sample_mean_[ANGLE_Z] : 0.0, is_yaw_given ? sample_stddev_[ANGLE_Z] : 1.0);
+  const auto sample_angle_z = [&]() {
+    return is_yaw_given ? dist_normal_angle_z(engine) : dist_uniform_angle_z(engine);
+  };
 
   if (static_cast<int64_t>(trials_.size()) < n_startup_trials_ || above_num_ == 0) {
     // Random sampling based on prior until the number of trials reaches `n_startup_trials_`.
@@ -88,7 +95,7 @@ TreeStructuredParzenEstimator::Input TreeStructuredParzenEstimator::get_next_inp
     input[TRANS_Z] = dist_normal_trans_z(engine);
     input[ANGLE_X] = dist_normal_angle_x(engine);
     input[ANGLE_Y] = dist_normal_angle_y(engine);
-    input[ANGLE_Z] = dist_uniform_angle_z(engine);
+    input[ANGLE_Z] = sample_angle_z();
     return input;
   }
 
@@ -101,7 +108,7 @@ TreeStructuredParzenEstimator::Input TreeStructuredParzenEstimator::get_next_inp
     input[TRANS_Z] = dist_normal_trans_z(engine);
     input[ANGLE_X] = dist_normal_angle_x(engine);
     input[ANGLE_Y] = dist_normal_angle_y(engine);
-    input[ANGLE_Z] = dist_uniform_angle_z(engine);
+    input[ANGLE_Z] = sample_angle_z();
     const double log_likelihood_ratio = compute_log_likelihood_ratio(input);
     if (log_likelihood_ratio > best_log_likelihood_ratio) {
       best_log_likelihood_ratio = log_likelihood_ratio;
