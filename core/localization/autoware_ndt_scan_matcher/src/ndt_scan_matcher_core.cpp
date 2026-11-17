@@ -1137,6 +1137,7 @@ void NDTScanMatcher::service_ndt_align_main(
     res->success = true;
     res->pose_with_covariance = pose_with_covariance;
     res->pose_with_covariance.pose.covariance = req->pose_with_covariance.pose.covariance;
+    res->score = score;
   });
 }
 

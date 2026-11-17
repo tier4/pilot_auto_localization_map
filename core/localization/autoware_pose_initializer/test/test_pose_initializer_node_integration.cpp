@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -67,6 +68,8 @@ rclcpp::NodeOptions make_node_options(
   options.append_parameter_override("gnss_pose_timeout", 3.0);
   options.append_parameter_override("pose_error_check_enabled", true);
   options.append_parameter_override("pose_error_threshold", 5.0);
+  options.append_parameter_override("pose_error_yaw_threshold_deg", 15.0);
+  options.append_parameter_override("pose_error_check_max_trials", 10);
   options.append_parameter_override(
     "user_defined_initial_pose.enable", user_defined_initial_pose_enable);
   options.append_parameter_override("map_height_fitter.target", "vector_map");
@@ -115,6 +118,16 @@ protected:
         res->success = mock_align_success_;
         res->pose_with_covariance = req->pose_with_covariance;
         res->pose_with_covariance.pose.pose.position.x += 1.0;  // Simulate an alignment shift
+
+        // Override the result per call if the test sets it
+        std::lock_guard<std::mutex> lk(align_mtx_);
+        const size_t index = align_calls_++;
+        if (index < mock_align_results_.size()) {
+          const auto & result = mock_align_results_[index];
+          res->pose_with_covariance.pose.pose.position.x = result.x;
+          res->pose_with_covariance.pose.pose.orientation = yaw_to_quaternion(result.yaw);
+          res->score = result.score;
+        }
       });
 
     auto trigger_callback = [this](
@@ -199,6 +212,25 @@ protected:
   std::atomic<bool> mock_align_success_{true};
   std::atomic<bool> mock_trigger_success_{true};
   std::atomic<int> trigger_calls_{0};
+
+  // Per-call results of the mock NDT align server
+  struct MockAlignResult
+  {
+    double x;
+    double yaw;
+    double score;
+  };
+  std::mutex align_mtx_;
+  std::vector<MockAlignResult> mock_align_results_;
+  size_t align_calls_{0};
+
+  static geometry_msgs::msg::Quaternion yaw_to_quaternion(const double yaw)
+  {
+    geometry_msgs::msg::Quaternion q;
+    q.z = std::sin(yaw / 2.0);
+    q.w = std::cos(yaw / 2.0);
+    return q;
+  }
 
   // Synchronization for receiving reset poses deterministically in tests
   std::mutex reset_mtx_;
@@ -384,6 +416,55 @@ TEST_F(PoseInitializerNodeIntegrationTest, AutoInitLargePoseErrSucceedsWithWarn)
   // Reset pose is now aligned pose (X = 11.0)
   ASSERT_NE(last_reset_pose_, nullptr);
   EXPECT_NEAR(last_reset_pose_->pose.pose.position.x, 11.0, near_tol);
+}
+
+// TEST 9. Confirms AUTO init retries the alignment while the error from GNSS is large and uses
+// the first result whose error is small.
+TEST_F(PoseInitializerNodeIntegrationTest, AutoInitRetriesUntilPoseErrSmall)
+{
+  publish_gnss_pose();
+  {
+    std::lock_guard<std::mutex> lk(align_mtx_);
+    // 1st: large position error, 2nd: large yaw error, 3rd: small error
+    mock_align_results_ = {{10.0, 0.0, 3.0}, {0.0, M_PI / 2.0, 2.0}, {1.0, 0.0, 1.0}};
+  }
+
+  auto req = std::make_shared<InitializeLocalization::Request>();
+  req->method = InitializeLocalization::Request::AUTO;
+  auto res = call_init_service(req);
+  EXPECT_TRUE(res->status.success);
+
+  ASSERT_TRUE(wait_for_reset(std::chrono::milliseconds(500))) << "Timed out waiting for reset pose";
+  ASSERT_NE(last_reset_pose_, nullptr);
+  // The 3rd result is used even though its score is the lowest
+  EXPECT_NEAR(last_reset_pose_->pose.pose.position.x, 1.0, near_tol);
+  std::lock_guard<std::mutex> lk(align_mtx_);
+  EXPECT_EQ(align_calls_, 3u);
+}
+
+// TEST 10. Confirms AUTO init stops after the max trials and uses the result with the best score.
+TEST_F(PoseInitializerNodeIntegrationTest, AutoInitUsesBestScoreAfterMaxTrials)
+{
+  publish_gnss_pose();
+  {
+    std::lock_guard<std::mutex> lk(align_mtx_);
+    // All results have a large position error. The 4th result has the best score.
+    for (int i = 0; i < 12; ++i) {
+      const double x = 10.0 + i;
+      mock_align_results_.push_back({x, 0.0, (i == 3) ? 5.0 : 1.0});
+    }
+  }
+
+  auto req = std::make_shared<InitializeLocalization::Request>();
+  req->method = InitializeLocalization::Request::AUTO;
+  auto res = call_init_service(req);
+  EXPECT_TRUE(res->status.success);
+
+  ASSERT_TRUE(wait_for_reset(std::chrono::milliseconds(500))) << "Timed out waiting for reset pose";
+  ASSERT_NE(last_reset_pose_, nullptr);
+  EXPECT_NEAR(last_reset_pose_->pose.pose.position.x, 13.0, near_tol);
+  std::lock_guard<std::mutex> lk(align_mtx_);
+  EXPECT_EQ(align_calls_, 10u);
 }
 
 // ============================ USER DEFINED INITIAL POSE HERE ============================

@@ -40,6 +40,18 @@
           "default": "5.0",
           "minimum": 0.0
         },
+        "pose_error_yaw_threshold_deg": {
+          "type": "number",
+          "description": "The yaw error threshold between GNSS and initial pose [deg]",
+          "default": "15.0",
+          "minimum": 0.0
+        },
+        "pose_error_check_max_trials": {
+          "type": "integer",
+          "description": "The maximum number of initial pose estimation trials while the error between GNSS and initial pose is large. If all trials fail, the result with the best score is used.",
+          "default": "10",
+          "minimum": 1
+        },
         "stop_check_enabled": {
           "type": "string",
           "description": "If true, initialization is accepted only when the vehicle is stopped.",
@@ -87,6 +99,8 @@
         "gnss_pose_timeout",
         "stop_check_duration",
         "pose_error_threshold",
+        "pose_error_yaw_threshold_deg",
+        "pose_error_check_max_trials",
         "ekf_enabled",
         "gnss_enabled",
         "yabloc_enabled",

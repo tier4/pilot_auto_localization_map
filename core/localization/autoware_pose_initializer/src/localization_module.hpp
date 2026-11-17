@@ -35,7 +35,9 @@ private:
 
 public:
   LocalizationModule(autoware::agnocast_wrapper::Node * node, const std::string & service_name);
-  std::tuple<PoseWithCovarianceStamped, bool> align_pose(const PoseWithCovarianceStamped & pose);
+  // Returns the aligned pose, its reliability, and its score.
+  std::tuple<PoseWithCovarianceStamped, bool, double> align_pose(
+    const PoseWithCovarianceStamped & pose);
 
 private:
   rclcpp::Logger logger_;

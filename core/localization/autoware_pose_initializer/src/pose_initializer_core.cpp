@@ -24,8 +24,12 @@
 #include <autoware_adapi_v1_msgs/msg/response_status.hpp>
 
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
+#include <tuple>
 #include <vector>
 
 namespace autoware::pose_initializer
@@ -175,31 +179,79 @@ void PoseInitializer::on_initialize(
       change_state(State::Message::INITIALIZING);
       change_node_trigger(false);
 
-      auto pose =
+      const auto initial_pose =
         req->pose_with_covariance.empty() ? get_gnss_pose() : req->pose_with_covariance.front();
-      bool reliable = true;
-      if (ndt_) {
-        std::tie(pose, reliable) = ndt_->align_pose(pose);
-      } else if (yabloc_) {
-        // If both the NDT and YabLoc initializer are enabled, prioritize NDT as it offers more
-        // accuracy pose.
-        std::tie(pose, reliable) = yabloc_->align_pose(pose);
+
+      // NOTE: If both the NDT and YabLoc initializer are enabled, prioritize NDT as it offers more
+      // accuracy pose.
+      LocalizationModule * aligner = ndt_ ? ndt_.get() : yabloc_.get();
+      const bool check_gnss_pose_error = pose_error_check_ && gnss_;
+
+      // Retry the alignment while the error from the GNSS pose is large. If all trials fail, the
+      // result with the best score is used.
+      const int64_t max_trials =
+        (aligner && check_gnss_pose_error) ? pose_error_check_->max_trials() : 1;
+
+      struct AlignResult
+      {
+        PoseWithCovarianceStamped pose;
+        bool reliable;
+        double score;
+        double gnss_error_2d;
+        double gnss_error_yaw;
+      };
+      std::optional<AlignResult> best_result;
+      bool is_gnss_pose_error_small = true;
+      int64_t trial_count = 0;
+
+      for (int64_t trial = 1; trial <= max_trials; ++trial) {
+        trial_count = trial;
+        AlignResult result{initial_pose, true, 0.0, 0.0, 0.0};
+        if (aligner) {
+          std::tie(result.pose, result.reliable, result.score) = aligner->align_pose(initial_pose);
+        }
+
+        if (!check_gnss_pose_error) {
+          best_result = result;
+          break;
+        }
+
+        // check pose error between gnss pose and initial pose result
+        const auto latest_gnss_pose = get_gnss_pose();
+        is_gnss_pose_error_small = pose_error_check_->check_pose_error(
+          latest_gnss_pose.pose.pose, result.pose.pose.pose, result.gnss_error_2d,
+          result.gnss_error_yaw);
+
+        if (is_gnss_pose_error_small) {
+          best_result = result;
+          break;
+        }
+
+        RCLCPP_WARN(
+          get_logger(), "Large error between Initial Pose and GNSS Pose. (trial %ld/%ld)", trial,
+          max_trials);
+        if (!best_result || best_result->score < result.score) {
+          best_result = result;
+        }
       }
+
+      auto pose = best_result->pose;
+      const bool reliable = best_result->reliable;
 
       diagnostics_pose_reliable_->clear();
 
-      // check pose error between gnss pose and initial pose result
-      if (pose_error_check_ && gnss_) {
-        const auto latest_gnss_pose = get_gnss_pose();
-
-        double gnss_error_2d;
-        const bool is_gnss_pose_error_small = pose_error_check_->check_pose_error(
-          latest_gnss_pose.pose.pose, pose.pose.pose, gnss_error_2d);
-
-        diagnostics_pose_reliable_->add_key_value("gnss_pose_error_2d", gnss_error_2d);
+      if (check_gnss_pose_error) {
+        diagnostics_pose_reliable_->add_key_value("gnss_pose_error_2d", best_result->gnss_error_2d);
+        diagnostics_pose_reliable_->add_key_value(
+          "gnss_pose_error_yaw_deg", best_result->gnss_error_yaw / M_PI * 180.0);
         diagnostics_pose_reliable_->add_key_value(
           "is_gnss_pose_error_small", is_gnss_pose_error_small);
+        diagnostics_pose_reliable_->add_key_value("pose_error_check_trials", trial_count);
+        diagnostics_pose_reliable_->add_key_value("initial_pose_score", best_result->score);
         if (!is_gnss_pose_error_small) {
+          RCLCPP_WARN(
+            get_logger(), "Use the result with the best score (%f) among %ld trials.",
+            best_result->score, trial_count);
           std::stringstream message;
           message << " Large error between Initial Pose and GNSS Pose.";
           diagnostics_pose_reliable_->update_level_and_message(

@@ -20,6 +20,8 @@
 
 #include <geometry_msgs/msg/pose.hpp>
 
+#include <cmath>
+
 namespace autoware::pose_initializer
 {
 /// Return true when the pose timestamp is older than the allowed timeout.
@@ -44,6 +46,20 @@ inline bool check_pose_error(
 {
   error_2d = autoware_utils_geometry::calc_distance2d(reference_pose, result_pose);
   return error_2d < threshold;
+}
+
+/// Compute the absolute yaw difference between two poses and return whether the error is small.
+///
+/// `error_yaw` is set to the absolute yaw difference in [0, pi] [rad] between `reference_pose`
+/// and `result_pose`. Returns true when the error is strictly below `threshold` [rad].
+inline bool check_yaw_error(
+  const geometry_msgs::msg::Pose & reference_pose, const geometry_msgs::msg::Pose & result_pose,
+  const double threshold, double & error_yaw)
+{
+  const double reference_yaw = autoware_utils_geometry::get_rpy(reference_pose).z;
+  const double result_yaw = autoware_utils_geometry::get_rpy(result_pose).z;
+  error_yaw = std::abs(std::remainder(result_yaw - reference_yaw, 2.0 * M_PI));
+  return error_yaw < threshold;
 }
 }  // namespace autoware::pose_initializer
 

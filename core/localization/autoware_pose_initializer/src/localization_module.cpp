@@ -33,7 +33,7 @@ LocalizationModule::LocalizationModule(
 {
 }
 
-std::tuple<PoseWithCovarianceStamped, bool> LocalizationModule::align_pose(
+std::tuple<PoseWithCovarianceStamped, bool, double> LocalizationModule::align_pose(
   const PoseWithCovarianceStamped & pose)
 {
   const auto req = std::make_shared<RequestPoseAlignment::Request>();
@@ -59,6 +59,6 @@ std::tuple<PoseWithCovarianceStamped, bool> LocalizationModule::align_pose(
   RCLCPP_INFO(logger_, "align server succeeded.");
 
   // Overwrite the covariance.
-  return std::make_tuple(res->pose_with_covariance, res->reliable);
+  return std::make_tuple(res->pose_with_covariance, res->reliable, res->score);
 }
 }  // namespace autoware::pose_initializer

@@ -98,4 +98,43 @@ TEST(CheckPoseError, ErrorEqualToThresholdReturnsFalse)
   EXPECT_FALSE(check_pose_error(reference, result, 1.0, error_2d));
   EXPECT_DOUBLE_EQ(error_2d, 1.0);
 }
+
+namespace
+{
+geometry_msgs::msg::Pose make_pose_with_yaw(double yaw)
+{
+  geometry_msgs::msg::Pose pose;
+  pose.orientation.z = std::sin(yaw / 2.0);
+  pose.orientation.w = std::cos(yaw / 2.0);
+  return pose;
+}
+}  // namespace
+
+TEST(CheckYawError, SmallErrorReturnsTrue)
+{
+  const auto reference = make_pose_with_yaw(0.0);
+  const auto result = make_pose_with_yaw(0.1);
+  double error_yaw = -1.0;
+  EXPECT_TRUE(check_yaw_error(reference, result, 0.2, error_yaw));
+  EXPECT_NEAR(error_yaw, 0.1, 1e-9);
+}
+
+TEST(CheckYawError, LargeErrorReturnsFalse)
+{
+  const auto reference = make_pose_with_yaw(0.0);
+  const auto result = make_pose_with_yaw(-0.5);
+  double error_yaw = -1.0;
+  EXPECT_FALSE(check_yaw_error(reference, result, 0.2, error_yaw));
+  EXPECT_NEAR(error_yaw, 0.5, 1e-9);
+}
+
+TEST(CheckYawError, ErrorIsNormalizedAcrossPi)
+{
+  // 179 deg and -179 deg differ by only 2 deg
+  const auto reference = make_pose_with_yaw(179.0 / 180.0 * M_PI);
+  const auto result = make_pose_with_yaw(-179.0 / 180.0 * M_PI);
+  double error_yaw = -1.0;
+  EXPECT_TRUE(check_yaw_error(reference, result, 0.1, error_yaw));
+  EXPECT_NEAR(error_yaw, 2.0 / 180.0 * M_PI, 1e-9);
+}
 }  // namespace autoware::pose_initializer

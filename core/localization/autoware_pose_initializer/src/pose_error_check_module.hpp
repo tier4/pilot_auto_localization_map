@@ -21,19 +21,25 @@
 
 #include <geometry_msgs/msg/pose.hpp>
 
+#include <cstdint>
+
 namespace autoware::pose_initializer
 {
 class PoseErrorCheckModule
 {
 public:
   explicit PoseErrorCheckModule(autoware::agnocast_wrapper::Node * node);
+  // Returns true when both the 2D distance error and the yaw error are small.
   bool check_pose_error(
     const geometry_msgs::msg::Pose & reference_pose, const geometry_msgs::msg::Pose & result_pose,
-    double & error_2d);
+    double & error_2d, double & error_yaw);
+  int64_t max_trials() const { return pose_error_check_max_trials_; }
 
 private:
   autoware::agnocast_wrapper::Node * node_;
   double pose_error_threshold_;
+  double pose_error_yaw_threshold_;  // [rad]
+  int64_t pose_error_check_max_trials_;
 };
 }  // namespace autoware::pose_initializer
 
